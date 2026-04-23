@@ -1,0 +1,75 @@
+# Single stack: Hermes agent (gateway) + combined dashboard (official backend + auth UI).
+# The dashboard container runs BOTH the official Hermes dashboard on 127.0.0.1:9119
+# (unreachable from outside) AND the Next.js auth layer on :3000 (the only public port).
+
+services:
+  hermes-core:
+    image: nousresearch/hermes-agent:latest
+    container_name: hermes-core
+    runtime: sysbox-runc
+    command: gateway run
+    ports:
+      - "8642:8642"
+    environment:
+      OPENAI_BASE_URL: "http://litellm_app:4000/v1"
+      OPENAI_API_KEY: "sk-CHANGEME"
+      HERMES_INFERENCE_PROVIDER: "custom"
+      TELEGRAM_BOT_TOKEN: "CHANGEME"
+      TELEGRAM_ALLOWED_USERS: "CHANGEME"
+      TZ: "Asia/Riyadh"
+      HERMES_HOME: "/opt/data"
+    volumes:
+      - hermes_config:/opt/data
+      - hermes_internal_docker:/var/lib/docker
+    networks: [hermes-internal, npm_default]
+    restart: always
+    logging:
+      driver: "json-file"
+      options: { max-size: "50m", max-file: "5" }
+
+  hermes-dashboard:
+    # Option A — build directly from the GitHub repo (no local clone needed):
+    build:
+      context: https://github.com/twuijri/Hermes-dashboard.git#main
+    # Option B — build from a local clone of the repo sitting next to this file:
+    # build:
+    #   context: ./Hermes-dashboard
+    container_name: hermes-dashboard
+    environment:
+      # REQUIRED — generate with:
+      #   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+      AUTH_SECRET: "CHANGEME-32-bytes-base64"
+      AUTH_TRUST_HOST: "true"
+
+      # Login credentials
+      ADMIN_USERNAME: "admin"
+      ADMIN_PASSWORD: "CHANGEME"
+      # For production prefer a bcrypt hash, base64-encoded:
+      #   node -e "console.log(Buffer.from(require('bcryptjs').hashSync('YOUR_PW',10)).toString('base64'))"
+      # ADMIN_PASSWORD_HASH_B64: ""
+
+      # Lets the dashboard's Status page ping the gateway
+      GATEWAY_HEALTH_URL: "http://hermes-core:8642"
+      TZ: "Asia/Riyadh"
+      HERMES_HOME: "/opt/data"
+    volumes:
+      - hermes_config:/opt/data
+    # Only the Next.js UI is published. Internal 9119 stays on loopback.
+    # If you terminate TLS via Nginx Proxy Manager on npm_default, you can remove `ports:`.
+    ports:
+      - "3000:3000"
+    networks: [hermes-internal, npm_default]
+    depends_on: [hermes-core]
+    restart: always
+    logging:
+      driver: "json-file"
+      options: { max-size: "20m", max-file: "3" }
+
+networks:
+  hermes-internal:
+  npm_default:
+    external: true
+
+volumes:
+  hermes_config: { name: hermes_config_data }
+  hermes_internal_docker: { name: hermes_docker_storage }

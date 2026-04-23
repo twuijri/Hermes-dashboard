@@ -28,12 +28,11 @@ services:
       options: { max-size: "50m", max-file: "5" }
 
   hermes-dashboard:
-    # Option A — build directly from the GitHub repo (no local clone needed):
-    build:
-      context: https://github.com/twuijri/Hermes-dashboard.git#main
-    # Option B — build from a local clone of the repo sitting next to this file:
-    # build:
-    #   context: ./Hermes-dashboard
+    # Prebuilt image from GitHub Container Registry — built automatically on every push
+    # to main by .github/workflows/docker.yml. Combined with `pull_policy: always`,
+    # restarting the stack in Dockge/Portainer pulls the latest version.
+    image: ghcr.io/twuijri/hermes-dashboard:latest
+    pull_policy: always
     container_name: hermes-dashboard
     environment:
       # REQUIRED — generate with:

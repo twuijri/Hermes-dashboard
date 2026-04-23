@@ -1,0 +1,71 @@
+# Example stack: Hermes agent (gateway) + combined dashboard (official backend + our auth UI).
+# The official Hermes dashboard listens on 127.0.0.1 inside the UI container — unreachable from
+# any network — while our Next.js layer on :3000 provides username/password auth and proxies
+# requests to it. This is what gets exposed to the internet via your reverse proxy (NPM/Caddy).
+
+services:
+  hermes-core:
+    image: nousresearch/hermes-agent:latest
+    container_name: hermes-core
+    runtime: sysbox-runc
+    command: gateway run
+    ports:
+      - "8642:8642"
+    environment:
+      OPENAI_BASE_URL: "http://litellm_app:4000/v1"
+      OPENAI_API_KEY: "sk-CHANGEME"
+      HERMES_INFERENCE_PROVIDER: "custom"
+      TELEGRAM_BOT_TOKEN: "CHANGEME"
+      TELEGRAM_ALLOWED_USERS: "CHANGEME"
+      TZ: "Asia/Riyadh"
+      HERMES_HOME: "/opt/data"
+    volumes:
+      - hermes_config:/opt/data
+      - hermes_internal_docker:/var/lib/docker
+    networks: [hermes-internal, npm_default]
+    restart: always
+    logging:
+      driver: "json-file"
+      options: { max-size: "50m", max-file: "5" }
+
+  # Single container: official Hermes dashboard on 127.0.0.1:9119 + our auth UI on 0.0.0.0:3000
+  hermes-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # OR use a prebuilt image once you push it:
+    # image: ghcr.io/twuijri/hermes-dashboard:latest
+    container_name: hermes-dashboard
+    environment:
+      # Required: random 32-byte base64. Generate with:
+      #   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+      AUTH_SECRET: "CHANGEME-32-bytes-base64"
+      AUTH_TRUST_HOST: "true"
+      ADMIN_USERNAME: "admin"
+      # Use either plaintext or bcrypt hash (base64-encoded to survive .env $-expansion)
+      ADMIN_PASSWORD: "CHANGEME"
+      # ADMIN_PASSWORD_HASH_B64: ""
+      GATEWAY_HEALTH_URL: "http://hermes-core:8642"
+      TZ: "Asia/Riyadh"
+      HERMES_HOME: "/opt/data"
+    volumes:
+      - hermes_config:/opt/data
+    # Only expose the UI port. The internal 9119 is on loopback and not published.
+    # If you use Nginx Proxy Manager on npm_default, you can omit ports: entirely.
+    ports:
+      - "3000:3000"
+    networks: [hermes-internal, npm_default]
+    depends_on: [hermes-core]
+    restart: always
+    logging:
+      driver: "json-file"
+      options: { max-size: "20m", max-file: "3" }
+
+networks:
+  hermes-internal:
+  npm_default:
+    external: true
+
+volumes:
+  hermes_config: { name: hermes_config_data }
+  hermes_internal_docker: { name: hermes_docker_storage }

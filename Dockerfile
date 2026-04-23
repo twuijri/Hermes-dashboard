@@ -34,7 +34,8 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0 \
     HERMES_BACKEND_PORT=9119 \
     HERMES_DASHBOARD_URL=http://127.0.0.1:9119 \
-    APP_DIR=/app
+    APP_DIR=/app \
+    PATH="/opt/hermes/.venv/bin:${PATH}"
 
 EXPOSE 3000
 

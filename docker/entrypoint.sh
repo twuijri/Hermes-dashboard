@@ -4,8 +4,18 @@ set -euo pipefail
 HERMES_PORT="${HERMES_BACKEND_PORT:-9119}"
 APP_DIR="${APP_DIR:-/app}"
 
+HERMES_BIN="${HERMES_BIN:-$(command -v hermes || true)}"
+if [ -z "$HERMES_BIN" ] && [ -x /opt/hermes/.venv/bin/hermes ]; then
+  HERMES_BIN=/opt/hermes/.venv/bin/hermes
+fi
+if [ -z "$HERMES_BIN" ]; then
+  echo "[entrypoint] could not locate hermes binary — PATH=$PATH" >&2
+  exit 127
+fi
+echo "[entrypoint] using hermes at: $HERMES_BIN"
+
 echo "[entrypoint] launching Hermes dashboard on 127.0.0.1:${HERMES_PORT} (loopback only)"
-hermes dashboard --host 127.0.0.1 --port "$HERMES_PORT" --no-open --insecure &
+"$HERMES_BIN" dashboard --host 127.0.0.1 --port "$HERMES_PORT" --no-open --insecure &
 HERMES_PID=$!
 
 echo "[entrypoint] waiting for Hermes dashboard to accept connections..."

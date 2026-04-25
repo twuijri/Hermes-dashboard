@@ -17,6 +17,40 @@ const HOP_BY_HOP = new Set([
   "content-encoding",
 ]);
 
+const HERMES_SESSION_HEADER = "X-Hermes-Session-Token";
+let _hermesToken: string | null = null;
+let _tokenInflight: Promise<string> | null = null;
+
+async function fetchHermesToken(): Promise<string> {
+  const res = await fetch(`${HERMES_URL}/`, { redirect: "manual" });
+  const html = await res.text();
+  const match = html.match(/window\.__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"/);
+  if (!match) {
+    throw new Error("Hermes session token not found in index.html");
+  }
+  return match[1];
+}
+
+async function getHermesToken(forceRefresh = false): Promise<string> {
+  if (!forceRefresh && _hermesToken) return _hermesToken;
+  if (_tokenInflight) return _tokenInflight;
+  _tokenInflight = fetchHermesToken()
+    .then((t) => {
+      _hermesToken = t;
+      return t;
+    })
+    .finally(() => {
+      _tokenInflight = null;
+    });
+  return _tokenInflight;
+}
+
+async function forwardOnce(target: string, baseInit: RequestInit, hermesToken: string) {
+  const headers = new Headers(baseInit.headers);
+  headers.set(HERMES_SESSION_HEADER, hermesToken);
+  return fetch(target, { ...baseInit, headers });
+}
+
 async function forward(req: NextRequest, path: string[]) {
   const session = await auth();
   if (!session) {
@@ -40,7 +74,12 @@ async function forward(req: NextRequest, path: string[]) {
   }
 
   try {
-    const upstream = await fetch(target, init);
+    let token = await getHermesToken();
+    let upstream = await forwardOnce(target, init, token);
+    if (upstream.status === 401) {
+      token = await getHermesToken(true);
+      upstream = await forwardOnce(target, init, token);
+    }
     const resHeaders = new Headers();
     upstream.headers.forEach((value, key) => {
       if (!HOP_BY_HOP.has(key.toLowerCase())) resHeaders.set(key, value);
